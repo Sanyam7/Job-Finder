@@ -81,7 +81,15 @@ services:
       - key: CLOUDINARY_API_SECRET
         sync: false
 
-      # SMTP — verification, password reset, and every status notification.
+      # SMTP — required only when EMAIL_ENABLED is true.
+      #
+      # This deployment runs with mail off: messages are written to the Render log rather
+      # than sent. That is survivable here only because login does not gate on a verified
+      # address (see auth.service.js), so accounts can still register and sign in. Password
+      # reset cannot complete, because the link never reaches anyone.
+      #
+      # To turn mail on, set EMAIL_ENABLED=true and supply all three of these — the process
+      # will refuse to boot without them, which is the point.
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
@@ -93,7 +101,7 @@ services:
       - key: EMAIL_FROM
         value: VeriHire <no-reply@verihire.app>
       - key: EMAIL_ENABLED
-        value: "true"
+        value: "false"
 
       # ------------------------------------------------------------------------- queues
       #

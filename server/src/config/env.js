@@ -110,6 +110,32 @@ if (JWT_ACCESS_SECRET && JWT_ACCESS_SECRET === JWT_REFRESH_SECRET) {
   );
 }
 
+/* ---------------------------------------------------------------------------- email */
+
+/**
+ * ★ Hoisted above the config object so the SMTP credentials can depend on it.
+ *
+ * `mailer.js` already falls back to a no-op transport when SMTP is absent, and its comment
+ * names "local development without SMTP credentials" as the case it exists for — but
+ * requiring the credentials unconditionally outside tests made that fallback unreachable
+ * anywhere else, so a deployment with email deliberately switched off still could not boot.
+ * The credentials are required when, and only when, something intends to send mail.
+ *
+ * This is not a way to run production without email. Nothing here weakens when
+ * `EMAIL_ENABLED` is true, and the warning below makes an intentionally mute deployment
+ * say so at every boot rather than being discovered by a user who never got their
+ * verification link.
+ */
+const EMAIL_ENABLED = bool('EMAIL_ENABLED', !isTest);
+
+if (!EMAIL_ENABLED && isProduction) {
+  warnings.push(
+    'EMAIL_ENABLED is false — verification, password-reset and notification mail will be ' +
+      'written to the log instead of sent. Accounts can still register and sign in, since ' +
+      'login does not gate on a verified address, but nobody can complete a password reset.',
+  );
+}
+
 /* --------------------------------------------------------------------------- config */
 
 export const env = Object.freeze({
@@ -155,14 +181,14 @@ export const env = Object.freeze({
   CLOUDINARY_FOLDER: str('CLOUDINARY_FOLDER', { default: 'verihire' }),
   SIGNED_URL_TTL_SECONDS: num('SIGNED_URL_TTL_SECONDS', 300, { min: 30, max: 3600 }),
 
-  /* email */
-  SMTP_HOST: str('SMTP_HOST', { required: !isTest }),
+  /* email — required only when EMAIL_ENABLED, see the note above */
+  SMTP_HOST: str('SMTP_HOST', { required: !isTest && EMAIL_ENABLED }),
   SMTP_PORT: num('SMTP_PORT', 587, { min: 1, max: 65535 }),
   SMTP_SECURE: bool('SMTP_SECURE', false),
-  SMTP_USER: str('SMTP_USER', { required: !isTest }),
-  SMTP_PASS: str('SMTP_PASS', { required: !isTest }),
+  SMTP_USER: str('SMTP_USER', { required: !isTest && EMAIL_ENABLED }),
+  SMTP_PASS: str('SMTP_PASS', { required: !isTest && EMAIL_ENABLED }),
   EMAIL_FROM: str('EMAIL_FROM', { default: 'VeriHire <no-reply@verihire.app>' }),
-  EMAIL_ENABLED: bool('EMAIL_ENABLED', !isTest),
+  EMAIL_ENABLED,
 
   /* redis / queues */
   /**
