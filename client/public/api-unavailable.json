@@ -4,7 +4,7 @@
   "error": {
     "code": "SERVICE_UNAVAILABLE",
     "details": {
-      "reason": "Netlify is serving the web client only. Point the /api/* proxy in netlify.toml at the deployed Express API to connect them."
+      "reason": "Netlify is serving the web client only. Uncomment the /api/* proxy line in client/public/_redirects and point it at the deployed Express API to connect them."
     }
   },
   "meta": { "requestId": null }

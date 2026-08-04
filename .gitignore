@@ -39,6 +39,9 @@ coverage/
 Thumbs.db
 desktop.ini
 
+# Deploy tooling — local link state, holds this machine's site binding
+.netlify/
+
 # Misc
 .cache/
 .temp/
