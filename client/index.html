@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b1120" />
+    <title>VeriHire — Find real jobs. From real companies.</title>
+    <meta
+      name="description"
+      content="Every employer is manually verified and every job is manually reviewed before it goes live."
+    />
+
+    <!--
+      Resolve the theme before React mounts.
+      Without this, a dark-mode user gets a white flash on every load while the bundle
+      parses and hydrates — the most visible symptom of "the theme is in JS state".
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = JSON.parse(localStorage.getItem('persist:verihire') || '{}');
+          var ui = stored.ui ? JSON.parse(stored.ui) : {};
+          var theme = ui.theme || 'system';
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          if (theme === 'dark' || (theme === 'system' && prefersDark)) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {
+          /* first visit, or storage blocked — light is a safe default */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

@@ -1,0 +1,639 @@
+openapi: 3.0.3
+
+info:
+  title: VeriHire API
+  version: 1.0.0
+  description: |
+    A job board where **no listing reaches a candidate until a human has checked it twice**.
+
+    ## The two gates
+
+    1. **Employer verification** — an admin reviews the company's registration documents and
+       signatory ID before it can post anything.
+    2. **Job approval** — an admin reads each listing before it goes live.
+
+    Both must pass. A verified company's unapproved job is invisible; an approved job from a
+    suspended company disappears the moment the company is suspended.
+
+    Every public read composes one predicate, `buildPublicJobFilter()`. There is no second
+    implementation and no endpoint that bypasses it.
+
+    ## Reading this spec
+
+    * Every response uses the same envelope — see `SuccessEnvelope` / `ErrorEnvelope`.
+    * Clients switch on `error.code`, never on `error.message`. Messages are copy and will
+      change; codes are a contract.
+    * `meta.requestId` appears on every response. Quote it in a bug report and the exact
+      request can be found in the logs.
+
+servers:
+  - url: http://localhost:5000/api/v1
+    description: Local
+  - url: https://api.verihire.app/api/v1
+    description: Production
+
+tags:
+  - name: Auth
+  - name: Public
+    description: Unauthenticated. Every route composes a visibility gate in its repository.
+  - name: Candidates
+  - name: Employers
+  - name: Jobs
+  - name: Applications
+  - name: Notifications
+  - name: Bookmarks
+  - name: Admin
+    description: ★ The moderation surface. The two gates live here.
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Create an account
+      security: []
+      description: |
+        `role` accepts `CANDIDATE` or `EMPLOYER` only. **`ADMIN` is refused** and no user is
+        created — there is no public path to moderator privileges, which matters on a platform
+        whose entire value is that a human moderator decides what is real.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [firstName, lastName, email, password, role]
+              properties:
+                firstName: { type: string, minLength: 2, maxLength: 50 }
+                lastName: { type: string, minLength: 2, maxLength: 50 }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8, maxLength: 128 }
+                role: { type: string, enum: [CANDIDATE, EMPLOYER] }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '409':
+          description: Email already registered
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Sign in
+      security: []
+      description: |
+        Returns an access token in the body and sets a **httpOnly, SameSite=Strict refresh
+        cookie** scoped to `/api/v1/auth`. The access token is meant to live in memory only —
+        putting it in `localStorage` makes any XSS a full account takeover.
+
+        Timing is equalised between "no such user" and "wrong password" so the endpoint cannot
+        be used to enumerate registered addresses.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: Signed in
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          accessToken: { type: string }
+                          user: { $ref: '#/components/schemas/User' }
+        '401': { description: Invalid credentials }
+        '403': { description: Account suspended }
+        '429':
+          description: Locked after 5 failed attempts in 15 minutes
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate the session
+      security: []
+      description: |
+        Reads the refresh cookie and issues a new pair, revoking the old token.
+
+        **Reuse detection**: presenting an already-revoked token revokes the entire token
+        family and returns 401. That is the signature of a stolen token being replayed, so
+        every session ends and the user is emailed.
+
+        Clients must serialise concurrent refreshes — two parallel 401s that both refresh will
+        trip reuse detection and sign the user out. See `client/src/api/axiosClient.js`.
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '401': { description: Missing, invalid, expired or reused }
+
+  /public/jobs:
+    get:
+      tags: [Public]
+      summary: Search live jobs
+      security: []
+      description: |
+        ★ Every result satisfies `buildPublicJobFilter()`: status `APPROVED`,
+        `isPubliclyVisible`, not deleted, deadline in the future — **and** its employer is
+        `VERIFIED` and `ACTIVE`.
+
+        Salary and experience filters are **interval overlaps**, not containment. A candidate
+        filtering for "at least 15L" sees a job paying 12–20L, because that job's ceiling
+        clears their floor. The naive comparison silently hides matching jobs and makes the
+        board look empty.
+      parameters:
+        - { in: query, name: q, schema: { type: string, maxLength: 100 } }
+        - { in: query, name: location, schema: { type: string } }
+        - in: query
+          name: skills
+          description: Repeatable, or comma-separated. Both forms work.
+          schema: { type: array, items: { type: string } }
+        - { in: query, name: workMode, schema: { type: array, items: { type: string, enum: [REMOTE, HYBRID, ONSITE] } } }
+        - { in: query, name: minSalary, schema: { type: integer, minimum: 0 } }
+        - { in: query, name: minExpYears, description: Years. Converted to months at the boundary., schema: { type: integer } }
+        - { in: query, name: sort, schema: { type: string, enum: [NEWEST, OLDEST, SALARY_HIGH, RELEVANCE] } }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Paginated job cards
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedEnvelope'
+                  - properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/JobCard' } }
+
+  /public/jobs/{slug}:
+    get:
+      tags: [Public]
+      summary: Job detail
+      security: []
+      description: |
+        ★ A job failing either gate returns **404, not 403**. Distinguishing "hidden" from
+        "nonexistent" would let anyone confirm that a specific pending or rejected listing
+        exists — exactly what a scraper building a target list wants.
+      parameters:
+        - { in: path, name: slug, required: true, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '404': { description: Not found, or not publicly visible }
+
+  /jobs:
+    post:
+      tags: [Jobs]
+      summary: Create a job as a DRAFT
+      description: |
+        ★ Behind `requireVerifiedEmployer`. An unverified company gets
+        `403 EMPLOYER_NOT_VERIFIED` with enough detail to render the right locked state in one
+        round trip: `verificationStatus`, `rejectionReason`, `canResubmit`.
+
+        Created jobs are always `DRAFT` with `isPubliclyVisible: false`, set explicitly rather
+        than by schema default so a future refactor cannot silently publish new jobs.
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '403': { $ref: '#/components/responses/EmployerNotVerified' }
+
+  /jobs/{id}:
+    patch:
+      tags: [Jobs]
+      summary: Update a job
+      description: |
+        ★ **The material-edit rule.** Editing the substance of an `APPROVED` listing — title,
+        description, requirements, salary, location, experience — returns it to `PENDING` and
+        hides it until re-reviewed.
+
+        Without this the approval gate is trivially bypassed: get one clean job approved, then
+        rewrite it into whatever you wanted to post. The response reports
+        `requiresReReview` and `changedMaterialFields` so the UI can explain what happened.
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '403': { $ref: '#/components/responses/EmployerNotVerified' }
+
+  /jobs/{id}/submit:
+    post:
+      tags: [Jobs]
+      summary: Submit for review
+      description: |
+        ★ The single transition that can ever lead to a public listing, and the reason drafting
+        is *not* gated: an employer waiting on verification can write their listings so they are
+        ready the moment they are approved.
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '403': { $ref: '#/components/responses/EmployerNotVerified' }
+        '409': { description: Illegal status transition }
+
+  /applications:
+    post:
+      tags: [Applications]
+      summary: Apply to a job
+      description: |
+        Transactional. Two invariants, each enforced by the database rather than by a check:
+
+        * **The job must be publicly visible**, re-read with `buildPublicJobFilter()` *inside
+          the transaction*. This closes the window between the browse page rendering and the
+          submit click — a window in which an admin may have pulled the listing.
+        * **One application per job per candidate**, guaranteed by a unique index. A
+          service-level read-then-write loses that race; an index cannot.
+
+        A resume on file is required.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jobId]
+              properties:
+                jobId: { type: string }
+                coverLetter: { type: string, maxLength: 3000 }
+                noticePeriodDays: { type: integer, minimum: 0, maximum: 180 }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '409':
+          description: |
+            `ALREADY_APPLIED`, `RESUME_REQUIRED`, or `JOB_NOT_ACCEPTING_APPLICATIONS`.
+            The last one covers expired, unapproved and suspended-employer alike — the
+            candidate's next action is the same in all three cases.
+
+  /applications/{id}:
+    get:
+      tags: [Applications]
+      summary: One application
+      description: |
+        ★ **Two shapes from one endpoint.** The service resolves which side of the relationship
+        the caller is on and picks the projection from that — never from a role claim in the
+        request.
+
+        The candidate shape is built by construction, not subtraction: it lists the fields it
+        emits rather than deleting the ones it must not, so a field added to the model next
+        year is invisible to candidates by default. `employerNotes`, `rating` and `tags` never
+        reach the person they are about.
+
+        A caller with no relationship to the row gets **404, not 403** — 403 would confirm the
+        id is real, enough to count a competitor's applicants.
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '404': { description: Not found, or not yours }
+
+  /applications/{id}/status:
+    patch:
+      tags: [Applications]
+      summary: Change status
+      description: |
+        Validated against `APPLICATION_STATUS_TRANSITIONS` **and** against who is asking.
+
+        Those are different questions. `APPLIED → WITHDRAWN` is a legal move, but an employer
+        performing it on a candidate's behalf would be falsifying the record to clean up their
+        own funnel — so candidates may only withdraw, and employers may only advance or reject.
+
+        A suspended employer is refused outright: a company suspended for running a scam must
+        not still be able to schedule "interviews" with people who already applied.
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '403': { description: Wrong actor for this transition, or employer suspended }
+        '409': { description: Illegal transition, or already terminal }
+
+  /candidates/me/resume:
+    post:
+      tags: [Candidates]
+      summary: Upload a resume
+      description: |
+        Returns **202, not 201**. The file is stored; reading it is queued. Saying "created"
+        would imply the extracted fields are ready and the client would poll for a draft that
+        does not exist yet.
+
+        The file is validated by **magic bytes**, not by its `Content-Type` or extension —
+        a renamed executable is rejected on its bytes. Stored as a Cloudinary
+        `authenticated` asset, so possession of a publicId is not possession of the file.
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                resume: { type: string, format: binary }
+      responses:
+        '202': { description: Stored and queued for parsing }
+        '415': { description: Not a PDF or Word document, whatever it claimed to be }
+
+  /candidates/me/resume/draft:
+    get:
+      tags: [Candidates]
+      summary: Review extracted details
+      description: |
+        ★ **ADR-006 — never force AI extracted values.**
+
+        Extraction lands in `parsedDraft` and *never* in the live profile. This returns each
+        extracted field alongside the current value and a `conflictsWithUserEdit` flag.
+
+        Nothing is pre-selected: there is no `selected` field, because a pre-ticked checkbox is
+        not consent.
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+
+  /candidates/me/resume/draft/apply:
+    post:
+      tags: [Candidates]
+      summary: Apply selected fields
+      description: |
+        ★ Requires an explicit list of dot-paths. `paths: []` is a **422**.
+
+        There is deliberately no request shape meaning "apply everything you found". If the UI
+        ever grows an "accept all" button it still has to enumerate what it is accepting.
+
+        Applied values are marked `PARSER`, not `USER` — the candidate accepted a machine's
+        reading, they did not write it. Only their own typing locks a field against re-parse.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paths]
+              properties:
+                paths:
+                  type: array
+                  minItems: 1
+                  items: { type: string, pattern: '^[a-zA-Z][a-zA-Z0-9]*(\.[a-zA-Z][a-zA-Z0-9]*)*$' }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '422': { description: Empty list, or a path that is not a plain dot path }
+
+  /admin/employers/{id}/verify:
+    post:
+      tags: [Admin]
+      summary: ★★ GATE 1 — verify a company
+      description: |
+        The single most consequential endpoint in the product.
+
+        Transactional: it marks the company verified, refreshes the denormalised company
+        snapshot on their jobs, and **flips every already-approved, in-deadline job of theirs
+        to publicly visible in the same commit**. Expired jobs are not published.
+
+        The checklist is mandatory — all five items must be `true` or the request is refused.
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [checklist]
+              properties:
+                checklist:
+                  type: object
+                  required: [companyNameMatches, websiteLive, emailDomainMatches, documentsValid, identityValid]
+                  properties:
+                    companyNameMatches: { type: boolean }
+                    websiteLive: { type: boolean }
+                    emailDomainMatches: { type: boolean }
+                    documentsValid: { type: boolean }
+                    identityValid: { type: boolean }
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '422': { description: Checklist incomplete }
+
+  /admin/employers/{id}/suspend:
+    post:
+      tags: [Admin]
+      summary: ★ Suspend a company
+      description: |
+        **Retroactive.** Every live listing from this company disappears in the same request.
+
+        This is why visibility is a denormalised read-side flag rather than a write-time check:
+        a write-time check cannot un-publish something that is already public, and a company
+        found to be fraudulent needs to be off the board now, not at the next cron run.
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200':
+          description: Suspended. Response reports how many listings were hidden.
+
+  /admin/jobs/{id}/approve:
+    post:
+      tags: [Admin]
+      summary: ★★ GATE 2 — approve a listing
+      description: |
+        Visibility is **recomputed from the employer's live state**, not assumed. An admin may
+        be approving a job whose company was suspended thirty seconds ago; in that case the job
+        becomes `APPROVED` but stays hidden, which is exactly right. The response reports
+        `isPubliclyVisible` so the UI can say which happened.
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '409': { description: Illegal transition }
+
+  /admin/jobs/{id}/reject:
+    post:
+      tags: [Admin]
+      summary: Reject a listing
+      description: |
+        A reason is required at three layers — validator, service and schema. The employer
+        receives it verbatim, which is why there is no path to rejecting without one.
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200': { $ref: '#/components/responses/OK' }
+        '422': { description: Reason missing or too short }
+
+  /admin/health/visibility:
+    get:
+      tags: [Admin]
+      summary: ★ Check the core invariant
+      description: |
+        Runs the nightly reconciliation in dry-run mode: recomputes visibility for every job
+        from first principles and compares it to the stored flag.
+
+        A non-zero `drifted` count is a **defect signal**, not routine maintenance — some write
+        path failed to keep the flag in step with the truth. Alert on `wronglyVisible > 0`
+        specifically: that direction means a hidden listing leaked into public results.
+      responses:
+        '200':
+          description: Drift report
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - properties:
+                      data:
+                        type: object
+                        properties:
+                          scanned: { type: integer }
+                          drifted: { type: integer }
+                          isHealthy: { type: boolean }
+                          wronglyVisible: { type: integer, description: The severe direction }
+                          wronglyHidden: { type: integer }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token, 15 minutes. Keep it in memory, never in localStorage.
+
+  parameters:
+    Id:
+      in: path
+      name: id
+      required: true
+      schema: { type: string, pattern: '^[0-9a-fA-F]{24}$' }
+    Page:
+      in: query
+      name: page
+      schema: { type: integer, minimum: 1, maximum: 500, default: 1 }
+    Limit:
+      in: query
+      name: limit
+      schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+
+  responses:
+    OK:
+      description: Success
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+    Created:
+      description: Created
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SuccessEnvelope' }
+    ValidationError:
+      description: Field-level validation failure
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+          example:
+            success: false
+            statusCode: 422
+            message: Please correct the highlighted fields.
+            error:
+              code: VALIDATION_ERROR
+              details:
+                - { field: email, message: Enter a valid email address }
+    RateLimited:
+      description: Too many requests
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+    EmployerNotVerified:
+      description: ★ The USP gate
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+          example:
+            success: false
+            statusCode: 403
+            message: Your company is still being verified. You can post jobs once an admin approves it.
+            error:
+              code: EMPLOYER_NOT_VERIFIED
+              details:
+                verificationStatus: PENDING
+                rejectionReason: null
+                canResubmit: false
+
+  schemas:
+    SuccessEnvelope:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        statusCode: { type: integer, example: 200 }
+        message: { type: string }
+        data: {}
+        meta:
+          type: object
+          properties:
+            requestId:
+              type: string
+              description: Quote this in a bug report to find the exact request in the logs.
+            timestamp: { type: string, format: date-time }
+
+    PaginatedEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            pagination:
+              type: object
+              properties:
+                page: { type: integer }
+                limit: { type: integer }
+                totalItems: { type: integer }
+                totalPages: { type: integer }
+                hasNextPage: { type: boolean }
+                hasPrevPage: { type: boolean }
+            summary:
+              type: object
+              nullable: true
+              description: |
+                Page-independent aggregates that belong with the list but are not part of it —
+                funnel counts, facets. Kept out of `data` so `data` is always exactly the array
+                the client maps over.
+
+    ErrorEnvelope:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        statusCode: { type: integer }
+        message: { type: string, description: Human-readable. Copy — do not switch on it. }
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable. **This** is the contract.
+            details:
+              description: Field errors, or context the client needs to render the right state.
+        meta:
+          type: object
+          properties:
+            requestId: { type: string }
+
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        firstName: { type: string }
+        lastName: { type: string }
+        email: { type: string, format: email }
+        role: { type: string, enum: [CANDIDATE, EMPLOYER, ADMIN] }
+        isEmailVerified: { type: boolean }
+
+    JobCard:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        slug: { type: string }
+        company:
+          type: object
+          properties:
+            name: { type: string }
+            slug: { type: string }
+            logo: { type: string, nullable: true }
+            isVerified:
+              type: boolean
+              description: |
+                ★ Written by the same transaction that verifies the company. Clients must
+                render the badge from this field and never infer it from "the job is in a
+                public list, so the company must be verified".
+        employmentType: { type: string }
+        workMode: { type: string, enum: [REMOTE, HYBRID, ONSITE] }
+        salaryLabel: { type: string, description: Pre-formatted so every client renders it identically. }
+        experienceLabel: { type: string }
+        locationLabel: { type: string }
+        deadline: { type: string, format: date-time }

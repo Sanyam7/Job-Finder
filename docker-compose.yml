@@ -1,0 +1,130 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: verihire-mongo
+    restart: unless-stopped
+    # Single-node replica set: transactions require one, and several core operations
+    # (approving an employer, applying to a job) are transactional by design.
+    command: ['--replSet', 'rs0', '--bind_ip_all']
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # Initialises the replica set once, then exits. Without this, mongo starts but never
+  # elects a primary and every write hangs.
+  mongo-init:
+    image: mongo:7
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: 'no'
+    entrypoint:
+      - bash
+      - -c
+      - |
+        mongosh --host mongo:27017 --quiet --eval '
+          try { rs.status(); print("replica set already initialised"); }
+          catch (e) { rs.initiate({_id:"rs0", members:[{_id:0, host:"mongo:27017"}]}); print("replica set initialised"); }
+        '
+
+  redis:
+    image: redis:7-alpine
+    container_name: verihire-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: verihire-api
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: ./server/.env
+    environment:
+      NODE_ENV: production
+      MONGO_URI: mongodb://mongo:27017/verihire?replicaSet=rs0
+      REDIS_URL: redis://redis:6379
+      PORT: 5000
+      TRUST_PROXY: 'true'
+    ports:
+      - '5000:5000'
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:5000/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: verihire-worker
+    restart: unless-stopped
+    # Same image, different entrypoint. No public port — it consumes queues and runs cron.
+    command: ['node', 'server/src/worker.js']
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: ./server/.env
+    environment:
+      NODE_ENV: production
+      ROLE: worker
+      MONGO_URI: mongodb://mongo:27017/verihire?replicaSet=rs0
+      REDIS_URL: redis://redis:6379
+      # Cron runs ONLY here. Scaling the API to N replicas must not run the expiry job
+      # N times.
+      ENABLE_CRON: 'true'
+
+  client:
+    build:
+      context: .
+      dockerfile: docker/client.Dockerfile
+      args:
+        VITE_API_URL: /api/v1
+    container_name: verihire-client
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - '8080:80'
+
+  mongo-express:
+    image: mongo-express:1.0.2
+    profiles: ['dev']
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://mongo:27017/
+      ME_CONFIG_BASICAUTH: 'false'
+    ports:
+      - '8081:8081'
+
+volumes:
+  mongo-data:
+  redis-data:

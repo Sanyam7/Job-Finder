@@ -1,0 +1,15 @@
+{
+  "name": "@verihire/shared",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Contract package: enums, limits, patterns and typedefs shared by client and server.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./constants": "./constants/index.js",
+    "./validation": "./validation/index.js",
+    "./utils": "./utils/index.js"
+  },
+  "sideEffects": false
+}

@@ -1,0 +1,40 @@
+{
+  "name": "verihire",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VeriHire — a MERN job portal where no job is public until an admin verifies the employer and approves the job.",
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,magenta \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "npm run dev --workspace=server",
+    "dev:client": "npm run dev --workspace=client",
+    "dev:worker": "npm run dev:worker --workspace=server",
+    "build": "npm run build --workspace=client",
+    "start": "npm run start --workspace=server",
+    "lint": "npm run lint --workspaces --if-present",
+    "lint:fix": "npm run lint:fix --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:server": "npm run test --workspace=server",
+    "format": "prettier --write \"**/*.{js,jsx,json,md,css}\"",
+    "seed": "npm run seed --workspace=server",
+    "seed:admin": "npm run seed:admin --workspace=server",
+    "seed:skills": "npm run seed:skills --workspace=server",
+    "seed:demo": "npm run seed:demo --workspace=server",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f api worker"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "prettier": "^3.3.3"
+  }
+}

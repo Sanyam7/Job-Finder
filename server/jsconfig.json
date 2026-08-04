@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
+    "types": ["node", "jest"],
+
+    "checkJs": true,
+    "allowJs": true,
+    "noEmit": true,
+
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+
+    "maxNodeModuleJsDepth": 0,
+
+    "baseUrl": ".",
+    "paths": {
+      "@verihire/shared": ["../shared/index.js"]
+    }
+  },
+  "include": ["src/**/*.js", "tests/**/*.js", "types/**/*.d.ts"],
+  "exclude": ["node_modules", "dist"]
+}

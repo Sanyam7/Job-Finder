@@ -1,0 +1,105 @@
+/**
+ * Machine-readable API error codes.
+ *
+ * The client switches on `error.code`, never on `error.message` — messages are copy and
+ * will change; codes are a contract.
+ */
+export const ERROR_CODES = Object.freeze({
+  /* 400 */
+  BAD_REQUEST: 'BAD_REQUEST',
+  INVALID_ID: 'INVALID_ID',
+  INVALID_QUERY: 'INVALID_QUERY',
+  MISSING_FIELD: 'MISSING_FIELD',
+
+  /* 401 */
+  UNAUTHORIZED: 'UNAUTHORIZED',
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  TOKEN_MISSING: 'TOKEN_MISSING',
+  TOKEN_INVALID: 'TOKEN_INVALID',
+  TOKEN_EXPIRED: 'TOKEN_EXPIRED',
+  REFRESH_TOKEN_MISSING: 'REFRESH_TOKEN_MISSING',
+  REFRESH_TOKEN_INVALID: 'REFRESH_TOKEN_INVALID',
+  SESSION_REVOKED: 'SESSION_REVOKED',
+  PASSWORD_CHANGED: 'PASSWORD_CHANGED',
+  ACCOUNT_LOCKED: 'ACCOUNT_LOCKED',
+
+  /* 403 */
+  FORBIDDEN: 'FORBIDDEN',
+  INSUFFICIENT_PERMISSIONS: 'INSUFFICIENT_PERMISSIONS',
+  EMAIL_NOT_VERIFIED: 'EMAIL_NOT_VERIFIED',
+  /** ★ The USP gate. Employer's company has not been verified by an admin yet. */
+  EMPLOYER_NOT_VERIFIED: 'EMPLOYER_NOT_VERIFIED',
+  EMPLOYER_SUSPENDED: 'EMPLOYER_SUSPENDED',
+  ACCOUNT_SUSPENDED: 'ACCOUNT_SUSPENDED',
+  NOT_RESOURCE_OWNER: 'NOT_RESOURCE_OWNER',
+  RESUME_ACCESS_DENIED: 'RESUME_ACCESS_DENIED',
+
+  /* 404 */
+  NOT_FOUND: 'NOT_FOUND',
+  USER_NOT_FOUND: 'USER_NOT_FOUND',
+  JOB_NOT_FOUND: 'JOB_NOT_FOUND',
+  APPLICATION_NOT_FOUND: 'APPLICATION_NOT_FOUND',
+  PROFILE_NOT_FOUND: 'PROFILE_NOT_FOUND',
+  EMPLOYER_PROFILE_MISSING: 'EMPLOYER_PROFILE_MISSING',
+  CANDIDATE_PROFILE_MISSING: 'CANDIDATE_PROFILE_MISSING',
+
+  /* 409 */
+  CONFLICT: 'CONFLICT',
+  EMAIL_ALREADY_EXISTS: 'EMAIL_ALREADY_EXISTS',
+  ALREADY_APPLIED: 'ALREADY_APPLIED',
+  ALREADY_VERIFIED: 'ALREADY_VERIFIED',
+  ALREADY_BOOKMARKED: 'ALREADY_BOOKMARKED',
+  INVALID_STATUS_TRANSITION: 'INVALID_STATUS_TRANSITION',
+  DUPLICATE_SUBMISSION: 'DUPLICATE_SUBMISSION',
+  VERIFICATION_IN_PROGRESS: 'VERIFICATION_IN_PROGRESS',
+  RESUME_REQUIRED: 'RESUME_REQUIRED',
+  JOB_NOT_ACCEPTING_APPLICATIONS: 'JOB_NOT_ACCEPTING_APPLICATIONS',
+  JOB_DEADLINE_PASSED: 'JOB_DEADLINE_PASSED',
+
+  /* 413 / 415 */
+  FILE_TOO_LARGE: 'FILE_TOO_LARGE',
+  TOO_MANY_FILES: 'TOO_MANY_FILES',
+  UNSUPPORTED_FILE_TYPE: 'UNSUPPORTED_FILE_TYPE',
+  CORRUPTED_FILE: 'CORRUPTED_FILE',
+
+  /* 422 */
+  VALIDATION_ERROR: 'VALIDATION_ERROR',
+
+  /* 429 */
+  TOO_MANY_REQUESTS: 'TOO_MANY_REQUESTS',
+
+  /* 5xx */
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+  DATABASE_ERROR: 'DATABASE_ERROR',
+  UPLOAD_FAILED: 'UPLOAD_FAILED',
+  EMAIL_SEND_FAILED: 'EMAIL_SEND_FAILED',
+  PARSE_FAILED: 'PARSE_FAILED',
+  SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
+});
+
+/**
+ * Client-side copy for codes that deserve a specific, actionable message.
+ * Anything not listed falls back to the server-provided `message`.
+ */
+export const ERROR_CODE_MESSAGES = Object.freeze({
+  [ERROR_CODES.INVALID_CREDENTIALS]: 'That email and password combination is not correct.',
+  [ERROR_CODES.ACCOUNT_LOCKED]:
+    'Too many failed attempts. Your account is locked for 15 minutes.',
+  [ERROR_CODES.EMAIL_NOT_VERIFIED]: 'Please verify your email address to continue.',
+  [ERROR_CODES.EMPLOYER_NOT_VERIFIED]:
+    'Your company is still being verified. You can post jobs once an admin approves it.',
+  [ERROR_CODES.EMPLOYER_SUSPENDED]:
+    'This company account has been suspended. Contact support for details.',
+  [ERROR_CODES.ACCOUNT_SUSPENDED]: 'Your account has been suspended.',
+  [ERROR_CODES.ALREADY_APPLIED]: "You've already applied to this job.",
+  [ERROR_CODES.RESUME_REQUIRED]: 'Upload a resume before applying.',
+  [ERROR_CODES.JOB_DEADLINE_PASSED]: 'The application deadline for this job has passed.',
+  [ERROR_CODES.JOB_NOT_ACCEPTING_APPLICATIONS]:
+    'This job is no longer accepting applications.',
+  [ERROR_CODES.INVALID_STATUS_TRANSITION]: 'That status change is not allowed.',
+  [ERROR_CODES.FILE_TOO_LARGE]: 'That file is too large.',
+  [ERROR_CODES.UNSUPPORTED_FILE_TYPE]: 'That file type is not supported.',
+  [ERROR_CODES.TOO_MANY_REQUESTS]: 'Too many requests. Please slow down and try again shortly.',
+  [ERROR_CODES.SESSION_REVOKED]: 'Your session ended for security reasons. Please sign in again.',
+  [ERROR_CODES.INTERNAL_ERROR]: 'Something went wrong on our end. Please try again.',
+});

@@ -1,0 +1,11 @@
+{
+  "success": false,
+  "message": "The API is not connected to this deployment yet.",
+  "error": {
+    "code": "SERVICE_UNAVAILABLE",
+    "details": {
+      "reason": "Netlify is serving the web client only. Point the /api/* proxy in netlify.toml at the deployed Express API to connect them."
+    }
+  },
+  "meta": { "requestId": null }
+}

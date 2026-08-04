@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+
+    "types": ["vite/client", "react", "react-dom"],
+
+    "checkJs": true,
+    "allowJs": true,
+    "noEmit": true,
+
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+
+    "maxNodeModuleJsDepth": 0,
+
+    "baseUrl": ".",
+    "paths": {
+      "@verihire/shared": ["../shared/index.js"]
+    }
+  },
+  "include": ["src/**/*.js", "src/**/*.jsx", "src/**/*.d.ts"],
+  "exclude": ["node_modules", "dist"]
+}

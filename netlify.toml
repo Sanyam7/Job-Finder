@@ -1,0 +1,97 @@
+# Netlify — the VeriHire web client.
+#
+# ★ Netlify hosts the CLIENT ONLY.
+#
+# The Express API is not deployable here and this is not a limitation worth fighting.
+# The server holds open a Mongo connection pool, a Redis connection for the rate limiter
+# and the token-family store, and a BullMQ worker that must outlive any single request.
+# Netlify Functions are stateless and time-boxed; every one of those would break. The API
+# belongs on a host that runs a normal long-lived process (Render, Railway, Fly, a VM).
+#
+# See `docs/10-DEPLOYMENT.md` for the API side.
+
+[build]
+  # The repo is an npm workspaces monorepo, so the build runs from the root: the client
+  # imports `@verihire/shared`, which only resolves when the root install has linked the
+  # workspaces together.
+  command = "npm run build --workspace=client"
+  publish = "client/dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+  # Netlify defaults to production installs, which would skip Vite itself.
+  NPM_FLAGS = "--include=dev"
+
+# --------------------------------------------------------------------- redirects
+#
+# Order matters — Netlify takes the first match, so the API rule has to precede the SPA
+# fallback or `/api/v1/jobs` would be served `index.html` with a 200 and axios would try
+# to parse a web page as JSON.
+
+# ★ Same-origin API proxy. Uncomment and set the real origin once the API is deployed.
+#
+# This must be a proxy rather than pointing the client at the API's own domain via
+# VITE_API_URL. The refresh token is an httpOnly SameSite=Strict cookie, and Strict means
+# the browser will not attach it to a cross-site request — so a cross-origin API would
+# authenticate on login and then fail every refresh, logging users out when the access
+# token expires. Proxying keeps the browser on one origin, which is the arrangement the
+# cookie settings and `vite.config.js`'s dev proxy were both written for.
+#
+# [[redirects]]
+#   from = "/api/*"
+#   to = "https://REPLACE-WITH-API-HOST/api/:splat"
+#   status = 200
+#   force = true
+
+# Until that origin exists, fail loudly and in the shape the client already understands.
+# Without this rule the SPA fallback below would answer API calls with HTML and a 200,
+# which surfaces as a TypeError deep inside a component instead of an error state.
+[[redirects]]
+  from = "/api/*"
+  to = "/api-unavailable.json"
+  status = 503
+  force = true
+
+# SPA fallback. Deep links like /jobs/abc123 are client-side routes with no file on disk;
+# 200 (not 301) so the URL the user typed is the URL they keep.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# ----------------------------------------------------------------------- headers
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # The app is never legitimately framed, and a job portal is a credible phishing
+    # target — DENY beats SAMEORIGIN because there is no same-origin framing either.
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    # Nothing in the app uses these; denying them means a future dependency cannot
+    # quietly start using them either.
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+    Cross-Origin-Opener-Policy = "same-origin"
+    #
+    # NOTE — no Content-Security-Policy here yet, deliberately.
+    #
+    # `client/index.html` runs an inline <script> to resolve the theme before React mounts
+    # (it prevents a white flash for dark-mode users). Any CSP without either a hash for
+    # that block or 'unsafe-inline' would kill it. Netlify serves static files, so a
+    # per-response nonce is not available, and a hash silently breaks the moment anyone
+    # edits those few lines. Adding a CSP is worth doing — it just needs the theme script
+    # moved into the bundle or a hash wired into the build, not a guessed header here.
+
+# Vite fingerprints everything under /assets, so those URLs are immutable by construction
+# and can be cached forever. index.html must never be, or a returning visitor keeps a
+# stale document pointing at deleted asset hashes.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
