@@ -5,17 +5,50 @@ import logger from './logger.js';
 let isConnected = false;
 
 /**
- * Connects to MongoDB with bounded retry.
+ * ★ Mongoose-wide settings, in one place so every connection gets the same ones.
  *
- * `strictQuery` is on so a typo in a filter key throws instead of silently matching
- * every document — the difference between "no results" and "leaked the whole collection".
+ * Exported and called by `tests/setup.js` as well. That is not tidiness — these are global
+ * driver settings that change how queries are *interpreted*, so a test harness that skips
+ * them runs against different semantics than production and can pass while production is
+ * completely broken. That is not hypothetical: it is exactly what happened here, and it hid
+ * a total failure of the public job list behind 142 green tests.
+ *
+ * `strictQuery` is on so a typo in a filter key throws instead of silently matching every
+ * document — the difference between "no results" and "leaked the whole collection".
+ */
+export const applyMongooseSettings = () => {
+  mongoose.set('strictQuery', true);
+
+  /**
+   * ★ Deliberately NOT `sanitizeFilter`.
+   *
+   * `sanitizeFilter` wraps any filter value containing `$` keys in `$eq`, because it cannot
+   * distinguish an operator the server constructed from one that arrived in a request body.
+   * It therefore breaks every server-built operator query — `buildPublicJobFilter()`'s
+   * `deadline: {$gte: now}` becomes `{$eq: {$gte: now}}` and throws a CastError, taking the
+   * entire public job list with it. Making it work would mean wrapping ~70 server-built
+   * operators in `mongoose.trusted()` and remembering to do so in every filter written from
+   * now on, where each omission is a production-only failure.
+   *
+   * Operator injection is already closed off twice before a filter is built:
+   *   1. `mongoSanitize` (app.js) recursively deletes every `$`-prefixed and dotted key from
+   *      body, params and query, so a `{$ne: null}` cannot survive the request boundary.
+   *   2. Controllers read `req.validated` from `matchedData`, which contains only declared,
+   *      type-coerced, allowlisted fields — an object cannot pass `toInt()` or an enum check.
+   *
+   * Layer 1 is the real defence and is unconditional; this was explicitly the backstop
+   * behind it. See sanitize.middleware.js.
+   */
+};
+
+/**
+ * Connects to MongoDB with bounded retry.
  *
  * @param {{retries?: number, retryDelayMs?: number}} [opts]
  * @returns {Promise<typeof mongoose>}
  */
 export const connectDatabase = async ({ retries = 5, retryDelayMs = 3000 } = {}) => {
-  mongoose.set('strictQuery', true);
-  mongoose.set('sanitizeFilter', true);
+  applyMongooseSettings();
 
   if (env.isDevelopment && process.env.MONGO_DEBUG === 'true') {
     mongoose.set('debug', (collection, method, query) => {
