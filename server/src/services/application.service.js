@@ -27,6 +27,7 @@ import { MESSAGES, format } from '../constants/messages.js';
 import { eventBus } from '../events/eventBus.js';
 import { EVENTS } from '../constants/events.js';
 import * as auditService from './audit.service.js';
+import * as candidateService from './candidate.service.js';
 
 /**
  * The applications pipeline.
@@ -242,13 +243,22 @@ const buildSnapshots = (job, user, profile) => ({
  * @param {{id: string, role: string, email: string}} actor
  */
 export const applyToJob = async (dto, actor) => {
-  const profile = await candidateRepository.findByUser(actor.id);
-  if (!profile) {
-    throw new NotFoundError(
-      ERROR_CODES.CANDIDATE_PROFILE_MISSING,
-      'Complete your profile before applying.',
-    );
-  }
+  /**
+   * `ensureProfile`, not `findByUser`.
+   *
+   * Candidate profiles are created lazily on first access — every path in
+   * candidate.service does this — so a candidate who registered and came straight to a job
+   * without opening their dashboard has no profile row yet. Reading directly turned that
+   * into 404 CANDIDATE_PROFILE_MISSING, which is both the wrong status and the wrong
+   * advice: the actual requirement is the resume checked immediately below, and a profile
+   * auto-created by visiting the dashboard is just as empty as no profile at all. That made
+   * the real gate "have you opened your dashboard once", which is not a gate anybody meant
+   * to build.
+   *
+   * Signing up from a job listing and applying without a detour through the dashboard is
+   * the most natural path a candidate can take, so it has to end in the honest error.
+   */
+  const profile = await candidateService.ensureProfile(actor.id);
 
   /**
    * A resume is required.

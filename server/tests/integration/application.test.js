@@ -250,6 +250,34 @@ describe('★ Applying is gated on the job being publicly visible', () => {
     expect(res.body.error.code).toBe(ERROR_CODES.RESUME_REQUIRED);
   });
 
+  /**
+   * Candidate profiles are created lazily on first access, so someone who signed up from a
+   * job listing and applied without ever opening their dashboard has no profile row. That
+   * used to surface as 404 CANDIDATE_PROFILE_MISSING — the wrong status and the wrong
+   * advice, since the real requirement is the resume and a dashboard-created profile is
+   * just as empty. It made the effective gate "have you visited your dashboard once".
+   */
+  it('tells a candidate with no profile row about the resume, not the profile', async () => {
+    const fresh = await User.create({
+      firstName: 'Nikhil',
+      lastName: 'Rao',
+      email: 'never.opened.dashboard@test.dev',
+      passwordHash: PASSWORD,
+      role: ROLES.CANDIDATE,
+      isEmailVerified: true,
+    });
+    expect(await CandidateProfile.findOne({ user: fresh._id })).toBeNull();
+
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'never.opened.dashboard@test.dev', password: PASSWORD });
+
+    const res = await applyToJob(login.body.data.accessToken);
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe(ERROR_CODES.RESUME_REQUIRED);
+  });
+
   it('refuses an employer applying to a job', async () => {
     const res = await applyToJob(ctx.employerToken);
     expect(res.status).toBe(403);
