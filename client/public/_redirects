@@ -12,8 +12,6 @@
 
 # ---------------------------------------------------------------- API proxy
 #
-# Uncomment and set the real origin once the Express API is deployed.
-#
 # This has to be a proxy rather than pointing the client at the API's own domain via
 # VITE_API_URL. The refresh token is an httpOnly SameSite=Strict cookie, and Strict means
 # the browser will not attach it to a cross-site request — so a cross-origin API would
@@ -21,12 +19,15 @@
 # the 15-minute access token expired. Proxying keeps the browser on a single origin, which
 # is the arrangement the cookie flags and the vite dev proxy were both written for.
 #
-# /api/*  https://REPLACE-WITH-API-HOST/api/:splat  200!
+# The `!` forces the rule even though a file could otherwise shadow it, and the API's own
+# prefix is /api/v1, so :splat carries the version through unchanged.
+/api/*  https://verihire-api.onrender.com/api/:splat  200!
 
-# Until that origin exists, fail loudly and in the envelope shape the client already
-# parses. Without this line the SPA fallback below would answer API calls with HTML and a
-# 200, which surfaces as a TypeError deep inside a component instead of an error state.
-/api/*  /api-unavailable.json  503!
+# If the API is ever taken down, comment the rule above and uncomment this one: it fails in
+# the envelope shape the client already parses, rather than letting the SPA fallback answer
+# API calls with HTML and a 200 — which surfaces as a TypeError deep inside a component
+# instead of an error state.
+# /api/*  /api-unavailable.json  503!
 
 # ------------------------------------------------------------- SPA fallback
 #
