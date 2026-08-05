@@ -13,6 +13,7 @@ import {
   enumQuery,
   idArrayBody,
   objectIdParam,
+  pageLimitRules,
   paginationRules,
   searchRule,
 } from './common.validator.js';
@@ -20,7 +21,8 @@ import {
 export const jobIdRules = [objectIdParam('id', 'job')];
 
 export const jobQueueRules = [
-  ...paginationRules(['createdAt', 'moderation.submittedAt', 'deadline']),
+  // `sort` is owned by the enumQuery below — the repository switches on 'newest'.
+  ...pageLimitRules(),
   enumQuery('status', JOB_STATUS_VALUES),
   enumQuery('sort', ['oldest', 'newest']),
 ];

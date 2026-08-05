@@ -19,15 +19,16 @@ export const objectIdBody = (name, { optional = false } = {}) => {
 };
 
 /**
- * Pagination + sorting.
+ * Page and limit only — no `sort` rule.
  *
- * `sort` is validated against an explicit allowlist rather than passed through: an
- * unvalidated sort string reaches the database as a query plan hint, and an attacker can
- * force an unindexed sort over a large collection to burn CPU.
- *
- * @param {string[]} allowedSortFields
+ * ★ Use this instead of `paginationRules` on any route that validates `sort` itself with
+ * `enumQuery`. Applying both puts two rules on the same field, and express-validator
+ * requires every rule to pass: if their allowlists do not overlap, *no* value of `sort` is
+ * accepted and the parameter becomes unusable. That is not theoretical — the public job
+ * search, the employer verification queue and the admin moderation queue each carried both,
+ * with disjoint lists, so every sort request returned 422.
  */
-export const paginationRules = (allowedSortFields = ['createdAt', 'updatedAt']) => [
+export const pageLimitRules = () => [
   query('page')
     .optional()
     .toInt()
@@ -39,6 +40,22 @@ export const paginationRules = (allowedSortFields = ['createdAt', 'updatedAt']) 
     .toInt()
     .isInt({ min: 1, max: LIMITS.MAX_PAGE_SIZE })
     .withMessage(`Limit must be between 1 and ${LIMITS.MAX_PAGE_SIZE}`),
+];
+
+/**
+ * Pagination + sorting by raw field name.
+ *
+ * `sort` is validated against an explicit allowlist rather than passed through: an
+ * unvalidated sort string reaches the database as a query plan hint, and an attacker can
+ * force an unindexed sort over a large collection to burn CPU.
+ *
+ * Only for routes whose repository takes a field name. Where the repository switches on a
+ * token like `'newest'`, use `pageLimitRules()` plus `enumQuery('sort', …)`.
+ *
+ * @param {string[]} allowedSortFields
+ */
+export const paginationRules = (allowedSortFields = ['createdAt', 'updatedAt']) => [
+  ...pageLimitRules(),
 
   query('sort')
     .optional()

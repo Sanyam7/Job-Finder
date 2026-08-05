@@ -7,7 +7,14 @@ import {
   LIMITS,
   PATTERNS,
 } from '@verihire/shared';
-import { objectIdParam, optionalUrl, paginationRules, searchRule, enumQuery } from './common.validator.js';
+import {
+  objectIdParam,
+  optionalUrl,
+  pageLimitRules,
+  paginationRules,
+  searchRule,
+  enumQuery,
+} from './common.validator.js';
 
 export const updateCompanyRules = [
   body('companyName')
@@ -117,7 +124,8 @@ export const suspendEmployerRules = [
 ];
 
 export const employerQueueRules = [
-  ...paginationRules(['createdAt', 'companyName', 'verification.submittedAt']),
+  // `sort` is owned by the enumQuery below — the repository switches on 'newest'.
+  ...pageLimitRules(),
   searchRule(),
   enumQuery('status', ['UNSUBMITTED', 'PENDING', 'VERIFIED', 'REJECTED']),
   enumQuery('sort', ['oldest', 'newest']),

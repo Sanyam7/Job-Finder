@@ -13,7 +13,7 @@ import {
   arrayQuery,
   enumQuery,
   objectIdParam,
-  paginationRules,
+  pageLimitRules,
   searchRule,
 } from './common.validator.js';
 import { query } from 'express-validator';
@@ -142,7 +142,9 @@ export const jobSlugRules = [];
  * so nothing below this line ever has to wonder which unit it is holding.
  */
 export const jobSearchRules = [
-  ...paginationRules(['publishedAt', 'createdAt', 'salary.max']),
+  // `sort` is owned by the enumQuery below — the repository's SORT_MAP is keyed by
+  // JOB_SORT tokens, not field names. See pageLimitRules for why both cannot coexist.
+  ...pageLimitRules(),
   query('q').optional().trim().isLength({ max: LIMITS.MAX_SEARCH_LENGTH }).escape(),
   query('location').optional().trim().isLength({ max: 100 }).escape(),
   arrayQuery('skills', { max: 15 }),
