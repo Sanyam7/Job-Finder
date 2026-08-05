@@ -133,6 +133,74 @@ const verifyEmployer = () =>
 
 /* ========================================================================== */
 
+/**
+ * ★ Registration is exercised through the API, not by constructing documents.
+ *
+ * Every other suite here builds its employer with `EmployerProfile.create(...)`, which is
+ * fast and readable but starts from a state the real sign-up path never produced: the
+ * company profile was never created at registration, so a genuinely registered employer got
+ * 404 EMPLOYER_PROFILE_MISSING from every employer endpoint — including `PATCH
+ * /employers/me`, leaving no way to create one and no way into the product at all. The gate
+ * suites all passed throughout, because none of them ever registered anybody.
+ */
+describe('★ Employer sign-up produces a usable account', () => {
+  const signUp = () =>
+    request(app).post('/api/v1/auth/register').send({
+      firstName: 'Grace',
+      lastName: 'Hopper',
+      email: 'newemployer@acme.test',
+      password: PASSWORD,
+      confirmPassword: PASSWORD,
+      role: ROLES.EMPLOYER,
+      companyName: 'Hopper Systems',
+    });
+
+  it('creates the company profile in the same breath as the account', async () => {
+    const res = await signUp();
+    expect(res.status).toBe(201);
+
+    const user = await User.findOne({ email: 'newemployer@acme.test' });
+    expect(user).not.toBeNull();
+
+    const profile = await EmployerProfile.findOne({ owner: user._id });
+    expect(profile).not.toBeNull();
+    expect(profile.companyName).toBe('Hopper Systems');
+    expect(profile.verificationStatus).toBe(VERIFICATION_STATUS.UNSUBMITTED);
+  });
+
+  it('lets a freshly registered employer reach their own company', async () => {
+    await signUp();
+
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'newemployer@acme.test', password: PASSWORD });
+    expect(login.status).toBe(200);
+
+    // The check that matters: this returned 404 for every real sign-up, so onboarding
+    // could never begin.
+    const me = await request(app)
+      .get('/api/v1/employers/me')
+      .set('Authorization', `Bearer ${login.body.data.accessToken}`);
+
+    expect(me.status).toBe(200);
+  });
+
+  it('does not create a company profile for a candidate', async () => {
+    const res = await request(app).post('/api/v1/auth/register').send({
+      firstName: 'Alan',
+      lastName: 'Turing',
+      email: 'newcandidate@acme.test',
+      password: PASSWORD,
+      confirmPassword: PASSWORD,
+      role: ROLES.CANDIDATE,
+    });
+    expect(res.status).toBe(201);
+
+    const user = await User.findOne({ email: 'newcandidate@acme.test' });
+    expect(await EmployerProfile.findOne({ owner: user._id })).toBeNull();
+  });
+});
+
 describe('★ Gate 1 — an unverified employer cannot publish', () => {
   it('blocks POST /jobs with EMPLOYER_NOT_VERIFIED', async () => {
     const res = await request(app)

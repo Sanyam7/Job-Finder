@@ -24,7 +24,8 @@ class EmployerRepository extends BaseRepository {
 
   /**
    * @param {string} userId
-   * @param {{select?: string, lean?: boolean}} [opts]
+   * @param {{select?: string, lean?: boolean,
+   *          session?: import('mongoose').ClientSession|null}} [opts]
    */
   findByOwner(userId, opts = {}) {
     return this.findOne({ owner: userId }, opts);

@@ -20,19 +20,40 @@ const VERIFIED_CORE_NESTED = ['contact.email'];
 
 /**
  * Creates the empty company profile that accompanies an employer sign-up.
+ *
+ * Called from `authService.register` inside the same transaction as the user, so an
+ * employer account cannot exist without one. It has to be that way rather than a
+ * `USER_REGISTERED` subscriber: without a profile every employer endpoint answers 404
+ * EMPLOYER_PROFILE_MISSING, including `PATCH /employers/me` — so there is no route back
+ * and the account is permanently locked out of the product. That is an invariant of the
+ * account, not a side effect of creating one.
+ *
+ * Idempotent: an existing profile is returned rather than duplicated, so a retry after a
+ * partial failure is safe.
+ *
+ * `slug` is passed as a starting point only — the model's pre-save hook recomputes it to
+ * something unique, because two companies genuinely can share a name.
+ *
  * @param {{userId: string, companyName: string}} params
+ * @param {{session?: import('mongoose').ClientSession|null}} [opts]
  */
-export const createForOwner = async ({ userId, companyName }) => {
-  const existing = await employerRepository.findByOwner(userId, { select: '_id' });
+export const createForOwner = async ({ userId, companyName }, opts = {}) => {
+  const existing = await employerRepository.findByOwner(userId, {
+    select: '_id',
+    session: opts.session,
+  });
   if (existing) return existing;
 
-  return employerRepository.create({
-    owner: userId,
-    companyName,
-    slug: slugify(companyName),
-    members: [{ user: userId, role: 'OWNER' }],
-    verificationStatus: VERIFICATION_STATUS.UNSUBMITTED,
-  });
+  return employerRepository.create(
+    {
+      owner: userId,
+      companyName,
+      slug: slugify(companyName),
+      members: [{ user: userId, role: 'OWNER' }],
+      verificationStatus: VERIFICATION_STATUS.UNSUBMITTED,
+    },
+    { session: opts.session },
+  );
 };
 
 /** @param {string} userId */

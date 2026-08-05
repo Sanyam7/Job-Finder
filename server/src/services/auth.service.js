@@ -1,6 +1,8 @@
-import { ACCOUNT_STATUS, ERROR_CODES, REGISTERABLE_ROLES, LIMITS } from '@verihire/shared';
+import { ACCOUNT_STATUS, ERROR_CODES, REGISTERABLE_ROLES, ROLES, LIMITS } from '@verihire/shared';
 import logger from '../config/logger.js';
 import { userRepository } from '../repositories/user.repository.js';
+import { withTransaction } from '../database/transaction.js';
+import { createForOwner } from './employer.service.js';
 import { tokenRepository } from '../repositories/token.repository.js';
 import { TOKEN_TYPE } from '../models/verificationToken.model.js';
 import { generateToken, hashToken } from '../utils/crypto.util.js';
@@ -43,15 +45,42 @@ export const register = async (dto, ctx = {}) => {
     throw new ConflictError(ERROR_CODES.EMAIL_ALREADY_EXISTS, MESSAGES.AUTH.EMAIL_TAKEN);
   }
 
-  const user = await userRepository.create({
-    firstName: dto.firstName,
-    lastName: dto.lastName,
-    email: dto.email,
-    passwordHash: dto.password, // the model's pre-save hook hashes this
-    role: dto.role,
-    status: ACCOUNT_STATUS.ACTIVE,
-    isEmailVerified: false,
-  });
+  /**
+   * ★ An employer's company profile is created here, in the same transaction as the user.
+   *
+   * Not in a `USER_REGISTERED` subscriber, and not lazily on first use: without a profile,
+   * every employer endpoint answers 404 EMPLOYER_PROFILE_MISSING — `GET /employers/me`,
+   * `PATCH /employers/me`, `POST /employers/me/verification` and `POST /jobs` alike. There
+   * is no request that creates one, so the account would be permanently unable to reach any
+   * part of the product it signed up for. The profile is an invariant of an employer
+   * account existing, so it commits with the account or not at all.
+   */
+  const user = await withTransaction(
+    async (session) => {
+      const created = await userRepository.create(
+        {
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+          email: dto.email,
+          passwordHash: dto.password, // the model's pre-save hook hashes this
+          role: dto.role,
+          status: ACCOUNT_STATUS.ACTIVE,
+          isEmailVerified: false,
+        },
+        { session },
+      );
+
+      if (created.role === ROLES.EMPLOYER) {
+        await createForOwner(
+          { userId: String(created._id), companyName: dto.companyName ?? '' },
+          { session },
+        );
+      }
+
+      return created;
+    },
+    { name: 'register' },
+  );
 
   const rawToken = await issueVerificationToken(String(user._id), TOKEN_TYPE.EMAIL_VERIFY, ctx.ip);
 
