@@ -25,6 +25,25 @@ import { ProvenanceChip } from './ProvenanceChip.jsx';
  * for a mis-tap on a phone.
  */
 
+/**
+ * ★ Declared above COLLECTION_SCHEMA, and it has to stay there.
+ *
+ * The schema calls this while it is being built — `options: [...].map((v) => titleCase(v))`
+ * runs at module scope, not on render. `const` bindings hoist without initialising, so with
+ * the definition further down the file the call landed in the temporal dead zone and threw
+ * `Cannot access 'titleCase' before initialization` as the module evaluated. That takes the
+ * whole chunk with it: every import of this file fails, React.lazy rejects, and the profile
+ * page renders nothing at all.
+ *
+ * The uses inside `title`/`subtitle` are safe either way, because those run on render. It is
+ * only the eager one in `options` that matters, which is exactly what made this easy to
+ * write and hard to see.
+ */
+const titleCase = (value) =>
+  String(value ?? '')
+    .toLowerCase()
+    .replace(/^\w/, (c) => c.toUpperCase());
+
 /** Field definitions per collection. Order here is the order on screen. */
 export const COLLECTION_SCHEMA = {
   experience: {
@@ -434,10 +453,5 @@ const monthLabel = (value) => {
     ? String(value)
     : date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
 };
-
-const titleCase = (value) =>
-  String(value ?? '')
-    .toLowerCase()
-    .replace(/^\w/, (c) => c.toUpperCase());
 
 export default CollectionEditor;
