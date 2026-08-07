@@ -9,14 +9,8 @@ import { sendTemplate } from '../../services/email.service.js';
  * exceptions by design. An SMTP outage must not prevent a job from being approved.
  */
 export const registerEmailSubscribers = () => {
-  eventBus.subscribe(
-    EVENTS.USER_REGISTERED,
-    async ({ email, firstName, verificationToken }) => {
-      if (!verificationToken) return;
-      await sendTemplate('verifyEmail', email, { firstName, token: verificationToken });
-    },
-    { name: 'sendVerificationEmail' },
-  );
+  // No USER_REGISTERED handler: there is no verification step to email anybody about.
+  // Registration completes an account outright, so nothing is pending on delivery.
 
   eventBus.subscribe(
     EVENTS.PASSWORD_RESET_REQUESTED,

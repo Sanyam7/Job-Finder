@@ -111,22 +111,13 @@ export const optionalAuth = async (req, _res, next) => {
   return next();
 };
 
-/**
- * Blocks users who have not confirmed their email address.
- * @type {import('express').RequestHandler}
+/*
+ * `requireVerifiedEmail` used to live here and is gone deliberately.
+ *
+ * Email verification was removed as a product decision — an account is usable the moment
+ * it is created — so a middleware asserting a verified address could only ever refuse
+ * everyone. It is not left in place unused: an unused guard invites being re-applied to a
+ * route later, where it would silently block that route for every user.
  */
-export const requireVerifiedEmail = (req, _res, next) => {
-  if (!req.user) {
-    return next(new UnauthorizedError(ERROR_CODES.TOKEN_MISSING, MESSAGES.ERROR.UNAUTHORIZED));
-  }
-  if (!req.user.isEmailVerified) {
-    return next(
-      new ForbiddenError(ERROR_CODES.EMAIL_NOT_VERIFIED, MESSAGES.AUTH.EMAIL_NOT_VERIFIED, {
-        email: req.user.email,
-      }),
-    );
-  }
-  return next();
-};
 
 export default authenticate;

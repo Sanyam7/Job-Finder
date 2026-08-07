@@ -8,7 +8,6 @@
 export const EVENTS = Object.freeze({
   /* account */
   USER_REGISTERED: 'user.registered',
-  USER_EMAIL_VERIFIED: 'user.emailVerified',
   USER_LOGGED_IN: 'user.loggedIn',
   USER_SUSPENDED: 'user.suspended',
   USER_RESTORED: 'user.restored',

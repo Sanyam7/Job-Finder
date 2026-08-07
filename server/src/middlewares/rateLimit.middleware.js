@@ -192,13 +192,6 @@ export const passwordResetLimiter = createRateLimiter({
   message: 'Too many reset requests. Please try again in an hour.',
 });
 
-export const emailResendLimiter = createRateLimiter({
-  keyPrefix: 'resend',
-  windowMs: 60 * 60 * 1000,
-  max: 3,
-  keyBy: (req) => `${clientKey(req)}:${String(req.body?.email ?? '').toLowerCase()}`,
-});
-
 export const applyLimiter = createRateLimiter({
   keyPrefix: 'apply',
   windowMs: 60 * 60 * 1000,

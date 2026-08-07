@@ -6,7 +6,6 @@ import {
   loginLimiter,
   registerLimiter,
   passwordResetLimiter,
-  emailResendLimiter,
 } from '../../middlewares/rateLimit.middleware.js';
 import * as rules from '../../validators/auth.validator.js';
 
@@ -21,13 +20,8 @@ router.post('/login', loginLimiter, validate(rules.loginRules), authController.l
 // makes a stolen token single-use.
 router.post('/refresh', authController.refresh);
 
-router.post('/verify-email', validate(rules.verifyEmailRules), authController.verifyEmail);
-router.post(
-  '/resend-verification',
-  emailResendLimiter,
-  validate(rules.resendVerificationRules),
-  authController.resendVerification,
-);
+// No /verify-email or /resend-verification: accounts are usable the moment they are
+// created, so there is nothing to verify or re-send.
 router.post(
   '/forgot-password',
   passwordResetLimiter,

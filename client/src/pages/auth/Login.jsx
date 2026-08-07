@@ -25,12 +25,23 @@ export const Login = () => {
   const [searchParams] = useSearchParams();
   const notice = SESSION_MESSAGES[searchParams.get('reason')];
 
+  /**
+   * Arriving straight from sign-up. There is no verification step, so the account is
+   * already usable — the only thing left is to sign in with the credentials just chosen,
+   * and the address is carried over so it does not have to be typed twice.
+   */
+  const justRegistered = Boolean(location.state?.justRegistered);
+
   const {
     register,
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
-  } = useForm({ resolver: yupResolver(loginSchema), mode: 'onBlur' });
+  } = useForm({
+    resolver: yupResolver(loginSchema),
+    mode: 'onBlur',
+    defaultValues: { email: location.state?.email ?? '' },
+  });
 
   const mutation = useMutation({
     mutationFn: authApi.login,
@@ -61,6 +72,17 @@ export const Login = () => {
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">
       <h1 className="text-2xl font-bold">Sign in</h1>
       <p className="mt-1 text-sm text-muted">Welcome back.</p>
+
+      {justRegistered && (
+        <div
+          role="status"
+          // `brand`, not `accent` — the palette reserves accent for verified state and
+          // says so explicitly. A "your account is ready" banner is informational.
+          className="mt-6 rounded-md border border-brand-500/30 bg-brand-50 px-4 py-3 text-sm text-brand-600 dark:bg-brand-500/10"
+        >
+          Your account is ready. Sign in with the password you just chose.
+        </div>
+      )}
 
       {notice && (
         <div

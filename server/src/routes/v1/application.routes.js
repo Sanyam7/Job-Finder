@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { ROLES } from '@verihire/shared';
 import * as applicationController from '../../controllers/application.controller.js';
-import { authenticate, requireVerifiedEmail } from '../../middlewares/auth.middleware.js';
+import { authenticate } from '../../middlewares/auth.middleware.js';
 import { authorize } from '../../middlewares/rbac.middleware.js';
 import { validate } from '../../middlewares/validate.middleware.js';
 import { applyLimiter } from '../../middlewares/rateLimit.middleware.js';
@@ -16,9 +16,11 @@ router.use(authenticate);
 /**
  * ★ Apply.
  *
- * `requireVerifiedEmail` is the candidate-side mirror of employer verification: an
- * unverified address is a throwaway address, and an employer who waited days for a human to
- * check their company should not have their inbox filled from one.
+ * There is no email-verification check. That gate was removed along with the verification
+ * step itself — an account is usable the moment it is created — so requiring a verified
+ * address here would have blocked every candidate permanently. What still stands between a
+ * throwaway account and an employer's inbox is the resume requirement in the service, which
+ * is the check that was actually doing the work.
  *
  * The job's own eligibility is NOT checked here — it is re-read inside the service's
  * transaction, because a middleware check would be one more place for the gate to be
@@ -27,7 +29,6 @@ router.use(authenticate);
 router.post(
   '/',
   authorize(ROLES.CANDIDATE),
-  requireVerifiedEmail,
   applyLimiter,
   validate(rules.applyRules),
   applicationController.apply,

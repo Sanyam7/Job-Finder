@@ -57,12 +57,17 @@ export const Signup = () => {
   const mutation = useMutation({
     mutationFn: authApi.register,
     /*
-     * No tokens come back and none are wanted: the server returns 201 without a session so an
-     * unverified address can never hold one. We hand the email forward in router state so the
-     * next screen can offer "resend" without asking them to type it again.
+     * The account is usable immediately — there is no verification step — but registration
+     * still returns 201 without a session, so the new account signs in explicitly rather
+     * than being logged in by a side effect of the form. The email is handed forward in
+     * router state so the sign-in field arrives pre-filled instead of asking them to type
+     * an address they entered a second ago.
      */
     onSuccess: (_data, variables) =>
-      navigate(ROUTES.VERIFY_EMAIL, { replace: true, state: { email: variables.email } }),
+      navigate(ROUTES.LOGIN, {
+        replace: true,
+        state: { email: variables.email, justRegistered: true },
+      }),
     onError: (error) => {
       if (error.code === ERROR_CODES.EMAIL_ALREADY_EXISTS) {
         setError('email', { message: 'An account already exists with this email.' });

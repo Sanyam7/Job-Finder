@@ -28,7 +28,11 @@ const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000; //  1 hour
  */
 
 /**
- * Creates an account and dispatches a verification email.
+ * Creates an account that is usable immediately.
+ *
+ * There is no email-verification step: the account is active on creation and the same
+ * credentials sign in straight away. Password reset still issues a token by email, so
+ * `issueVerificationToken` and the token table remain in use for that.
  *
  * @param {{firstName: string, lastName: string, email: string, password: string,
  *          role: string, companyName?: string}} dto
@@ -65,7 +69,15 @@ export const register = async (dto, ctx = {}) => {
           passwordHash: dto.password, // the model's pre-save hook hashes this
           role: dto.role,
           status: ACCOUNT_STATUS.ACTIVE,
-          isEmailVerified: false,
+          /**
+           * Email verification has been removed as a product decision: an account is
+           * usable the moment it is created, with the same credentials it was created
+           * with. The column is kept rather than dropped so existing rows, the JWT claim
+           * and the user DTO stay valid, and so reinstating verification later is a
+           * change of policy rather than a migration.
+           */
+          isEmailVerified: true,
+          emailVerifiedAt: new Date(),
         },
         { session },
       );
@@ -82,15 +94,12 @@ export const register = async (dto, ctx = {}) => {
     { name: 'register' },
   );
 
-  const rawToken = await issueVerificationToken(String(user._id), TOKEN_TYPE.EMAIL_VERIFY, ctx.ip);
-
   eventBus.emit(EVENTS.USER_REGISTERED, {
     userId: String(user._id),
     email: user.email,
     firstName: user.firstName,
     role: user.role,
     companyName: dto.companyName ?? null,
-    verificationToken: rawToken,
     ip: ctx.ip ?? null,
   });
 
@@ -200,68 +209,6 @@ export const logout = async (rawRefreshToken) => {
 
 /** @param {string} userId */
 export const logoutAll = (userId) => tokenService.revokeAllSessions(userId, 'LOGOUT_ALL');
-
-/**
- * Consumes an email-verification token.
- * @param {string} rawToken
- */
-export const verifyEmail = async (rawToken) => {
-  const record = await tokenRepository.findVerificationByRaw(rawToken, TOKEN_TYPE.EMAIL_VERIFY);
-
-  if (!record || record.usedAt) {
-    throw new BadRequestError(ERROR_CODES.TOKEN_INVALID, MESSAGES.AUTH.INVALID_TOKEN);
-  }
-  if (record.expiresAt.getTime() <= Date.now()) {
-    throw new BadRequestError(ERROR_CODES.TOKEN_EXPIRED, MESSAGES.AUTH.EXPIRED_TOKEN);
-  }
-
-  const user = await userRepository.findById(String(record.user), { lean: false });
-  if (!user) throw new BadRequestError(ERROR_CODES.TOKEN_INVALID, MESSAGES.AUTH.INVALID_TOKEN);
-
-  if (user.isEmailVerified) {
-    await tokenRepository.markVerificationUsed(String(record._id));
-    return user;
-  }
-
-  user.isEmailVerified = true;
-  user.emailVerifiedAt = new Date();
-  await user.save({ validateBeforeSave: false });
-  await tokenRepository.markVerificationUsed(String(record._id));
-
-  eventBus.emit(EVENTS.USER_EMAIL_VERIFIED, {
-    userId: String(user._id),
-    email: user.email,
-    firstName: user.firstName,
-    role: user.role,
-  });
-
-  return user;
-};
-
-/**
- * Re-sends a verification link.
- *
- * Resolves successfully whether or not the account exists — the controller always returns
- * the same neutral message, so this cannot be used to probe for registered addresses.
- *
- * @param {string} email
- * @param {RequestContext} [ctx]
- */
-export const resendVerification = async (email, ctx = {}) => {
-  const user = await userRepository.findByEmail(email);
-  if (!user || user.deletedAt || user.isEmailVerified) return;
-
-  const rawToken = await issueVerificationToken(String(user._id), TOKEN_TYPE.EMAIL_VERIFY, ctx.ip);
-
-  eventBus.emit(EVENTS.USER_REGISTERED, {
-    userId: String(user._id),
-    email: user.email,
-    firstName: user.firstName,
-    role: user.role,
-    verificationToken: rawToken,
-    isResend: true,
-  });
-};
 
 /**
  * @param {string} email
@@ -408,8 +355,6 @@ export default {
   refresh,
   logout,
   logoutAll,
-  verifyEmail,
-  resendVerification,
   forgotPassword,
   resetPassword,
   changePassword,

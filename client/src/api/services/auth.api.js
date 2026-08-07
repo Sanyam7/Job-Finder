@@ -10,9 +10,6 @@ export const authApi = {
   logout: () => axiosClient.post('/auth/logout').then(unwrap),
   logoutAll: () => axiosClient.post('/auth/logout-all').then(unwrap),
   me: () => axiosClient.get('/auth/me').then(unwrap),
-  verifyEmail: (token) => axiosClient.post('/auth/verify-email', { token }).then(unwrap),
-  resendVerification: (email) =>
-    axiosClient.post('/auth/resend-verification', { email }).then(unwrap),
   forgotPassword: (email) => axiosClient.post('/auth/forgot-password', { email }).then(unwrap),
   resetPassword: (payload) => axiosClient.post('/auth/reset-password', payload).then(unwrap),
   changePassword: (payload) => axiosClient.patch('/auth/change-password', payload).then(unwrap),

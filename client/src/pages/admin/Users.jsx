@@ -132,7 +132,6 @@ export const Users = () => {
                   <Th>User</Th>
                   <Th>Role</Th>
                   <Th>Status</Th>
-                  <Th>Email</Th>
                   <Th>Joined</Th>
                   <Th><span className="sr-only">Actions</span></Th>
                 </tr>
@@ -159,18 +158,6 @@ export const Users = () => {
                         <p className="mt-1 max-w-[16rem] truncate text-xs text-muted" title={user.suspendedReason}>
                           {user.suspendedReason}
                         </p>
-                      )}
-                    </Td>
-
-                    {/*
-                      An unverified address is worth seeing at a glance: it is the usual
-                      explanation for "I signed up but cannot log in".
-                    */}
-                    <Td>
-                      {user.isEmailVerified ? (
-                        <span className="text-xs text-accent-600 dark:text-accent-300">Verified</span>
-                      ) : (
-                        <span className="text-xs text-warn-600">Unverified</span>
                       )}
                     </Td>
 

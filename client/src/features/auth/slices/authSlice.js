@@ -106,7 +106,6 @@ export const selectAccessToken = (state) => state.auth.accessToken;
 export const selectIsAuthenticated = (state) => state.auth.isAuthenticated;
 export const selectAuthStatus = (state) => state.auth.status;
 export const selectRole = (state) => state.auth.user?.role ?? ROLES.GUEST;
-export const selectIsEmailVerified = (state) => state.auth.user?.isEmailVerified ?? false;
 
 /**
  * ★ The client mirror of the USP gate.

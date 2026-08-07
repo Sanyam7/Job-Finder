@@ -104,23 +104,12 @@ export const me = asyncHandler(async (req, res) => {
   return ApiResponse.ok(res, { user: toSessionUser(user, context) }, MESSAGES.AUTH.PROFILE_FETCHED);
 });
 
-export const verifyEmail = asyncHandler(async (req, res) => {
-  const user = await authService.verifyEmail(req.validated.token);
-  return ApiResponse.ok(res, { user: toSelfUser(user) }, MESSAGES.AUTH.EMAIL_VERIFIED);
-});
-
 /**
  * Always 200, whether or not the address is registered.
  *
  * A "no account with that email" response turns this endpoint into a free membership
  * oracle — useful for building a target list of people who are job-hunting.
  */
-export const resendVerification = asyncHandler(async (req, res) => {
-  await authService.resendVerification(req.validated.email, requestContext(req));
-  return ApiResponse.ok(res, null, MESSAGES.AUTH.VERIFICATION_SENT);
-});
-
-/** Always 200 — same reasoning as `resendVerification`. */
 export const forgotPassword = asyncHandler(async (req, res) => {
   await authService.forgotPassword(req.validated.email, requestContext(req));
   return ApiResponse.ok(res, null, MESSAGES.AUTH.RESET_LINK_SENT);

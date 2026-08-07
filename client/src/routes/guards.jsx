@@ -3,7 +3,6 @@ import { useSelector } from 'react-redux';
 import {
   selectAuthStatus,
   selectIsAuthenticated,
-  selectIsEmailVerified,
   selectIsVerifiedEmployer,
   selectUser,
 } from '../features/auth/slices/authSlice.js';
@@ -60,12 +59,6 @@ export const PublicOnlyRoute = () => {
   if (status === 'bootstrapping') return <FullPageSpinner />;
   if (isAuthenticated) return <Navigate to={homeForRole(user?.role)} replace />;
 
-  return <Outlet />;
-};
-
-export const VerifiedEmailRoute = () => {
-  const isVerified = useSelector(selectIsEmailVerified);
-  if (!isVerified) return <Navigate to={ROUTES.VERIFY_EMAIL} replace />;
   return <Outlet />;
 };
 

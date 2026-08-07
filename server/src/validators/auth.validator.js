@@ -81,17 +81,6 @@ export const loginRules = [
   body('rememberMe').optional().isBoolean().toBoolean(),
 ];
 
-export const verifyEmailRules = [
-  body('token')
-    .trim()
-    .notEmpty()
-    .withMessage('Verification token is required')
-    .isLength({ min: 32, max: 128 })
-    .withMessage('That verification link is not valid'),
-];
-
-export const resendVerificationRules = [emailRule()];
-
 export const forgotPasswordRules = [emailRule()];
 
 export const resetPasswordRules = [

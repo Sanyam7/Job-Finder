@@ -25,7 +25,6 @@ const NotFound = lazy(() => import('./pages/public/NotFound.jsx'));
 
 const Login = lazy(() => import('./pages/auth/Login.jsx'));
 const Signup = lazy(() => import('./pages/auth/Signup.jsx'));
-const VerifyEmail = lazy(() => import('./pages/auth/VerifyEmail.jsx'));
 const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword.jsx'));
 const ResetPassword = lazy(() => import('./pages/auth/ResetPassword.jsx'));
 
@@ -63,7 +62,6 @@ export const App = () => (
         <Route path={ROUTES.LOGIN} element={<Login />} />
         <Route path={ROUTES.SIGNUP} element={<Signup />} />
       </Route>
-      <Route path={ROUTES.VERIFY_EMAIL} element={<VerifyEmail />} />
       <Route path={ROUTES.FORGOT_PASSWORD} element={<ForgotPassword />} />
       <Route path={ROUTES.RESET_PASSWORD} element={<ResetPassword />} />
 

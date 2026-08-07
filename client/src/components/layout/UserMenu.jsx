@@ -99,15 +99,6 @@ export const UserMenu = ({ user }) => {
               {user.firstName} {user.lastName}
             </p>
             <p className="truncate text-xs text-muted">{user.email}</p>
-            {!user.isEmailVerified && (
-              <Link
-                to="/verify-email"
-                onClick={() => setOpen(false)}
-                className="mt-1.5 inline-block text-xs font-medium text-warn-600 hover:underline"
-              >
-                Verify your email →
-              </Link>
-            )}
           </div>
 
           <div className="p-1">
