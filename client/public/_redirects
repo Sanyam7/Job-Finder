@@ -29,6 +29,24 @@
 # instead of an error state.
 # /api/*  /api-unavailable.json  503!
 
+# ------------------------------------------------------- missing build assets
+#
+# ★ This rule must come before the SPA fallback, and leaving it out is a real outage.
+#
+# Vite fingerprints every chunk, so a deploy changes the hashes. A tab that was open across
+# that deploy still holds the old index, and the moment it visits a lazy route it requests
+# a chunk name that no longer exists. Without this rule the fallback below answers that
+# request with index.html and a 200 — the browser gets text/html where it expected a
+# module, refuses to execute it (nosniff makes that certain), the dynamic import rejects,
+# React.lazy throws, and the whole app unmounts to a blank page. It looks like the page
+# crashed; the page was never loaded.
+#
+# A 404 is the honest answer for a file that is genuinely gone, and it is what lets the
+# error boundary recognise a stale build and offer a reload instead of a blank screen.
+# Existing assets are unaffected: Netlify serves a real file before consulting a
+# non-forced redirect, so this only ever fires for one that has been deployed away.
+/assets/*  /index.html  404
+
 # ------------------------------------------------------------- SPA fallback
 #
 # Deep links like /jobs/abc123 are client-side routes with no file on disk. 200 rather

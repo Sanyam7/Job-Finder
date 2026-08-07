@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ROLES } from '@verihire/shared';
 import { ROUTES } from './routes/paths.js';
 import {
@@ -9,6 +9,7 @@ import {
   VerifiedEmployerRoute,
 } from './routes/guards.jsx';
 import { FullPageSpinner } from './components/common/FullPageSpinner.jsx';
+import { ErrorBoundary } from './components/common/ErrorBoundary.jsx';
 import { DashboardLayout } from './components/layout/DashboardLayout.jsx';
 import { CANDIDATE_NAV, EMPLOYER_NAV, ADMIN_NAV } from './routes/navigation.jsx';
 
@@ -44,7 +45,29 @@ const AdminJobQueue = lazy(() => import('./pages/admin/JobQueue.jsx'));
 const AdminUsers = lazy(() => import('./pages/admin/Users.jsx'));
 const AdminAnalytics = lazy(() => import('./pages/admin/Analytics.jsx'));
 
-export const App = () => (
+/**
+ * ★ The boundary is keyed by pathname.
+ *
+ * An error boundary latches: once it has caught, it keeps rendering its fallback until it
+ * remounts. Without the key, one broken page would leave the fallback on screen for every
+ * route the user navigated to afterwards, and the app would look permanently dead instead
+ * of having one bad screen. Keying it on the path throws the caught state away the moment
+ * the user goes somewhere else.
+ *
+ * It sits inside the router so navigation still works from the fallback, and inside
+ * Suspense so a chunk that fails to load is caught here rather than escaping to the root.
+ */
+export const App = () => {
+  const { pathname } = useLocation();
+
+  return (
+    <ErrorBoundary key={pathname}>
+      <AppRoutes />
+    </ErrorBoundary>
+  );
+};
+
+const AppRoutes = () => (
   <Suspense fallback={<FullPageSpinner />}>
     <Routes>
       {/* ---------------------------------------------------------- public */}
