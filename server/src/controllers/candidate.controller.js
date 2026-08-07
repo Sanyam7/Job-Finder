@@ -167,7 +167,10 @@ export const getDashboard = asyncHandler(async (req, res) => {
       profileCompleteness: profile.profileCompleteness,
       hasResume: Boolean(profile.resume?.publicId),
       openToWork: profile.openToWork,
-      hasPendingDraft: Boolean(profile.parsedDraft?.fields),
+      // Same rule as the profile DTO: only a path autofill skipped still needs a decision.
+      hasPendingDraft: Object.keys(profile.parsedDraft?.fields ?? {}).some((path) =>
+        profile.isUserEdited(path),
+      ),
       applications: {
         total: counts.total,
         active:

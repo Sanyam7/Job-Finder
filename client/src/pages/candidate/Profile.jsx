@@ -67,19 +67,25 @@ export const Profile = () => {
 
       <Completeness value={profile.profileCompleteness} />
 
-      {/* ★ The bridge to the review screen — never an auto-apply. */}
+      {/*
+        ★ Only raised for fields autofill refused to touch.
+        Everything the resume gave us that the candidate had not already written is in the
+        form below, so this is not "come and approve your resume" — it is the narrower and
+        genuinely useful "the resume disagrees with something you typed".
+      */}
       {profile.hasPendingDraft && (
         <Alert
           tone="info"
-          title="We read your resume"
+          title="Your resume disagrees with a few things you wrote"
           className="mb-4"
           action={
             <Link to={ROUTES.CANDIDATE_RESUME_REVIEW}>
-              <Button size="sm">Review</Button>
+              <Button size="sm">Compare</Button>
             </Link>
           }
         >
-          Nothing has been applied. Look at what we found and pick what to keep.
+          We kept what you typed. Compare them side by side and switch any you would rather
+          take from the resume.
         </Alert>
       )}
 

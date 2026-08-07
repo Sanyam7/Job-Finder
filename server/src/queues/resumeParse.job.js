@@ -8,11 +8,53 @@ import { eventBus } from '../events/eventBus.js';
 import { EVENTS } from '../constants/events.js';
 
 /**
+ * ★ Writes parsed values onto the profile, skipping anything the candidate typed.
+ *
+ * Exported and kept separate from the job so the rule can be tested against a real profile
+ * document without mocking Cloudinary and the parser. The guarantee worth testing is not
+ * "does it fill fields" — it is "does it leave a hand-typed value alone", because that is
+ * the one that loses somebody's work when it breaks, and it only breaks on the second
+ * upload, which nobody does by accident while developing.
+ *
+ * @param {any} profile a CandidateProfile document
+ * @param {Record<string, any>} fields
+ * @returns {{autofilled: string[], preserved: string[]}}
+ */
+export const autofillFromDraft = (profile, fields) => {
+  const autofilled = [];
+  const preserved = [];
+
+  for (const [path, value] of Object.entries(fields ?? {})) {
+    if (profile.isUserEdited(path)) {
+      preserved.push(path);
+      continue;
+    }
+    profile.set(path, value);
+    // PARSER, not USER: the candidate has not written this, and a later parse should be
+    // free to improve it. Their own edit is what promotes a path to USER and locks it.
+    profile.setFieldSource(path, FIELD_SOURCE.PARSER);
+    autofilled.push(path);
+  }
+
+  return { autofilled, preserved };
+};
+
+/**
  * The resume-parse job.
  *
- * ★ ADR-006 in executable form. This function may write to exactly two places:
- * `profile.parsedDraft` and `profile.resume.parseStatus`. It never touches a live profile
- * field — not even an empty one, and not even when the candidate has typed nothing at all.
+ * ★ This job autofills the profile, which is a deliberate reversal of ADR-006's original
+ * "never auto-apply" rule and supersedes it.
+ *
+ * The original reasoning was that a parser's guess should never be presented as the
+ * candidate's own words. That still holds, and is why every autofilled path is marked
+ * PARSER rather than USER, and why anything the candidate typed is never overwritten. What
+ * changed is the default: an empty profile beside a filled-in resume is a form the
+ * candidate has already completed once, and asking them to approve it field by field cost
+ * more than it protected. They can edit every value afterwards, which is the guarantee that
+ * actually mattered.
+ *
+ * The line the job still will not cross is a path with USER provenance. See the autofill
+ * loop below.
  *
  * The same function backs the BullMQ worker and the inline fallback, so "no Redis" cannot
  * mean "different behaviour".
@@ -56,7 +98,6 @@ export const runResumeParse = async ({ profileId, publicId, format, userId }) =>
       return { parsed: false, reason: 'NO_FIELDS' };
     }
 
-    // ★ The draft, and only the draft.
     profile.parsedDraft = {
       extractedAt: new Date(),
       engine,
@@ -68,15 +109,29 @@ export const runResumeParse = async ({ profileId, publicId, format, userId }) =>
     profile.resume.parseError = null;
 
     /**
-     * Provenance for fields the candidate has never touched.
+     * ★ Autofill.
      *
-     * Marking an untouched path PARSER lets the review UI show "read from your resume"
-     * without implying they wrote it. Paths already marked USER are left exactly as they
-     * are — this loop is the one place a re-parse could clobber authorship, so it does not.
+     * Parsed values are written straight onto the profile, so uploading a resume fills the
+     * form in rather than handing the candidate a second form to fill in about the first.
+     * Everything stays editable afterwards — nothing here locks a field.
+     *
+     * ★ Except paths the candidate typed themselves.
+     *
+     * Those are the one thing autofill must not touch. Someone who corrected the job title
+     * a parser misread, then uploaded an updated CV, would otherwise watch their correction
+     * silently revert — and a re-parse of an already-parsed field is exactly when that
+     * happens. `isUserEdited` is what distinguishes "we put this here" from "they wrote
+     * this", and only the first is ours to overwrite. Skipped paths stay in the draft, so
+     * the review screen can still offer them as an explicit side-by-side choice.
+     *
+     * Applied values are marked PARSER, not USER: the candidate has not written them, and
+     * a later parse should be free to improve them. Their own edit is what promotes a path
+     * to USER and makes it permanent.
      */
-    for (const path of Object.keys(fields)) {
-      if (!profile.isUserEdited(path)) profile.setFieldSource(path, FIELD_SOURCE.PARSER);
-    }
+    const { autofilled, preserved } = autofillFromDraft(profile, fields);
+
+    // Only a path the candidate must still decide about counts as pending review.
+    profile.parsedDraft.appliedAt = autofilled.length ? new Date() : null;
 
     await profile.save();
 
@@ -84,16 +139,19 @@ export const runResumeParse = async ({ profileId, publicId, format, userId }) =>
       profileId,
       userId,
       fieldCount: Object.keys(fields).length,
+      autofilledCount: autofilled.length,
       engine,
     });
 
-    logger.info('Resume parsed', {
+    logger.info('Resume parsed and autofilled', {
       profileId,
       fields: Object.keys(fields).length,
+      autofilled: autofilled.length,
+      preserved: preserved.length,
       ms: Date.now() - started,
     });
 
-    return { parsed: true, fields: Object.keys(fields) };
+    return { parsed: true, fields: Object.keys(fields), autofilled, preserved };
   } catch (error) {
     const message = /** @type {Error} */ (error).message;
     logger.error('Resume parse failed', { profileId, message });

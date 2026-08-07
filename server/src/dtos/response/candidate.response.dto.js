@@ -1,5 +1,6 @@
 import {
   AVAILABILITY_META,
+  FIELD_SOURCE,
   PARSE_STATUS,
   formatExperience,
   formatLocation,
@@ -97,7 +98,20 @@ export const toOwnProfile = (profile) => {
      */
     fieldSources,
 
-    hasPendingDraft: Boolean(doc.parsedDraft?.fields),
+    /**
+     * ★ "Pending" means a decision is still owed, not merely that a draft exists.
+     *
+     * Autofill writes every parsed path the candidate has not typed, so after an ordinary
+     * upload the draft is already reflected in the profile and there is nothing left to
+     * review. What remains is the set autofill deliberately skipped: paths marked USER,
+     * where the parser disagrees with something they wrote themselves. Only those need a
+     * side-by-side choice, and only those should raise a banner — a prompt to "review what
+     * we found" over values already sitting in the form is just noise the candidate learns
+     * to dismiss.
+     */
+    hasPendingDraft: Object.keys(doc.parsedDraft?.fields ?? {}).some(
+      (path) => fieldSources[path] === FIELD_SOURCE.USER,
+    ),
     stats: doc.stats ?? {},
     updatedAt: doc.updatedAt,
   };

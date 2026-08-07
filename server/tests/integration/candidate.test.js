@@ -15,13 +15,23 @@ import { User } from '../../src/models/user.model.js';
 import { EmployerProfile } from '../../src/models/employerProfile.model.js';
 import { CandidateProfile } from '../../src/models/candidateProfile.model.js';
 import { Application } from '../../src/models/application.model.js';
+import { autofillFromDraft } from '../../src/queues/resumeParse.job.js';
 
 /**
  * ★ ADR-006 — "Never force AI extracted values. Manual editing should always be allowed."
  *
- * This suite exists to make that sentence from the brief enforceable rather than aspirational.
- * The claim under test is narrow and absolute: **nothing a machine extracted reaches a live
- * profile field without an explicit, per-field request from the person it belongs to.**
+ * The second half of that sentence is what this suite now enforces, and it is absolute:
+ * **a value the candidate typed is never overwritten by a machine, and every autofilled
+ * value stays editable.**
+ *
+ * The first half changed. Uploading a resume now fills the profile in directly rather than
+ * producing a form to approve field by field — an empty profile next to a completed resume
+ * is a form the candidate has already filled in once. Extracted values are still marked
+ * PARSER rather than USER, so nothing pretends they wrote it, and their own edit is what
+ * promotes a path to USER and puts it out of a later parse's reach.
+ *
+ * The apply endpoint is unchanged and still applies only what it is explicitly given: it is
+ * how a candidate resolves a path that autofill deliberately skipped.
  *
  * It also covers the candidate's own discoverability switch, which is the candidate-side
  * mirror of employer verification: employers are visible only after a human approves them,
@@ -238,29 +248,136 @@ describe('profile lifecycle', () => {
   });
 });
 
+describe('★ Autofill from a parsed resume', () => {
+  beforeEach(async () => {
+    await asCandidate('get', '/api/v1/candidates/me').expect(200);
+  });
+
+  /** The point of the feature: an empty profile comes back filled in. */
+  it('writes parsed values straight onto an untouched profile', async () => {
+    const profile = await CandidateProfile.findOne({ user: ctx.candidateUserId });
+
+    const { autofilled, preserved } = autofillFromDraft(profile, {
+      headline: 'Senior Frontend Engineer',
+      totalExperienceMonths: 60,
+      currentCompany: 'Acme',
+    });
+    await profile.save();
+
+    expect(autofilled.sort()).toEqual(['currentCompany', 'headline', 'totalExperienceMonths']);
+    expect(preserved).toEqual([]);
+
+    const saved = await CandidateProfile.findOne({ user: ctx.candidateUserId });
+    expect(saved.headline).toBe('Senior Frontend Engineer');
+    expect(saved.totalExperienceMonths).toBe(60);
+  });
+
+  /** Autofilled, not authored — so a better parse later is still allowed to improve it. */
+  it('marks an autofilled value PARSER, never USER', async () => {
+    const profile = await CandidateProfile.findOne({ user: ctx.candidateUserId });
+    autofillFromDraft(profile, { headline: 'Read from the PDF' });
+    await profile.save();
+
+    const saved = await CandidateProfile.findOne({ user: ctx.candidateUserId });
+    expect(saved.getFieldSource('headline')).toBe(FIELD_SOURCE.PARSER);
+    expect(saved.isUserEdited('headline')).toBe(false);
+  });
+
+  /**
+   * ★ The guarantee that actually protects somebody's work.
+   *
+   * This only ever fails on a second upload — correct a parser's mistake, upload an updated
+   * CV, and watch the correction silently revert. Nobody hits that by accident while
+   * developing, which is exactly why it needs a test rather than a careful reading.
+   */
+  it('never overwrites a value the candidate typed', async () => {
+    await asCandidate('patch', '/api/v1/candidates/me')
+      .send({ headline: 'What I actually call myself' })
+      .expect(200);
+
+    const profile = await CandidateProfile.findOne({ user: ctx.candidateUserId });
+    expect(profile.isUserEdited('headline')).toBe(true);
+
+    const { autofilled, preserved } = autofillFromDraft(profile, {
+      headline: 'What the parser guessed',
+      currentCompany: 'Acme',
+    });
+    await profile.save();
+
+    expect(preserved).toEqual(['headline']);
+    expect(autofilled).toEqual(['currentCompany']);
+
+    const saved = await CandidateProfile.findOne({ user: ctx.candidateUserId });
+    expect(saved.headline).toBe('What I actually call myself');
+    expect(saved.currentCompany).toBe('Acme');
+  });
+
+  /** An autofilled path is not locked — editing it afterwards is the whole promise. */
+  it('lets the candidate edit an autofilled value, which promotes it to USER', async () => {
+    const profile = await CandidateProfile.findOne({ user: ctx.candidateUserId });
+    autofillFromDraft(profile, { headline: 'Parser guess' });
+    await profile.save();
+
+    await asCandidate('patch', '/api/v1/candidates/me')
+      .send({ headline: 'My own words' })
+      .expect(200);
+
+    const saved = await CandidateProfile.findOne({ user: ctx.candidateUserId });
+    expect(saved.headline).toBe('My own words');
+    expect(saved.getFieldSource('headline')).toBe(FIELD_SOURCE.USER);
+  });
+});
+
 describe('★ ADR-006 — extracted values are never forced', () => {
   beforeEach(async () => {
     await asCandidate('get', '/api/v1/candidates/me').expect(200);
   });
 
   /**
-   * ★ The core claim. A parse landed a full draft; the live profile is still empty.
+   * ★ Storing a draft is still not the same as applying it.
+   *
+   * Autofill is what writes to the profile, and it runs in the parse job; the draft itself
+   * remains inert. Seeding one directly — as the parse job does for a path it skipped —
+   * must not move a single live field.
+   *
+   * The draft here conflicts with a headline the candidate typed, because that is the only
+   * shape of draft that still awaits a decision now that autofill applies the rest.
    */
   it('leaves the live profile untouched when a draft exists', async () => {
-    await seedDraft({
-      headline: 'Senior Frontend Engineer',
-      totalExperienceMonths: 60,
-      skills: [{ name: 'React' }, { name: 'Node.js' }],
-    });
+    await asCandidate('patch', '/api/v1/candidates/me')
+      .send({ headline: 'What I actually call myself' })
+      .expect(200);
+
+    await seedDraft(
+      {
+        headline: 'Senior Frontend Engineer',
+        totalExperienceMonths: 60,
+        skills: [{ name: 'React' }, { name: 'Node.js' }],
+      },
+      { userEditedPaths: ['headline'] },
+    );
 
     const profile = await CandidateProfile.findOne({ user: ctx.candidateUserId });
-    expect(profile.headline).toBeUndefined();
+    expect(profile.headline).toBe('What I actually call myself');
     expect(profile.totalExperienceMonths).toBe(0);
     expect(profile.skills).toHaveLength(0);
 
     const res = await asCandidate('get', '/api/v1/candidates/me').expect(200);
-    expect(res.body.data.headline).toBeNull();
+    expect(res.body.data.headline).toBe('What I actually call myself');
+    // Pending because the draft contradicts a path the candidate authored — that is now
+    // the only thing the flag reports.
     expect(res.body.data.hasPendingDraft).toBe(true);
+  });
+
+  /**
+   * The flag must stay quiet when autofill has already handled everything, or the banner it
+   * drives becomes a permanent fixture that candidates learn to ignore.
+   */
+  it('reports no pending draft when nothing conflicts with the candidate', async () => {
+    await seedDraft({ headline: 'Senior Frontend Engineer', currentCompany: 'Acme' });
+
+    const res = await asCandidate('get', '/api/v1/candidates/me').expect(200);
+    expect(res.body.data.hasPendingDraft).toBe(false);
   });
 
   it('returns the draft side by side with the current value', async () => {
